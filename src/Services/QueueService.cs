@@ -22,6 +22,13 @@ public sealed class QueueService : IQueueService
   private readonly HashSet<ulong> _roundTerrorists = new();
   private readonly HashSet<ulong> _roundCounterTerrorists = new();
 
+  // Guards against scheduling TerminateRound more than once per round.
+  // Calling TerminateRound twice within the same world-update tick (e.g. when
+  // multiple disconnects/team-changes each invoke CheckRoundDone) crashes inside
+  // the native game-rules code because the round is already in its end-delay state.
+  // Reset on round start (SetRoundTeams) and round end (ClearRoundTeams).
+  private bool _terminationScheduled;
+
   public IReadOnlySet<ulong> ActivePlayers => _activePlayers;
   public IReadOnlySet<ulong> QueuePlayers => _queuePlayers;
 
@@ -375,51 +382,102 @@ public sealed class QueueService : IQueueService
     CheckRoundDone();
   }
 
+  // Returns true if the game-rules state is unsafe to call TerminateRound against
+  // (freeze period, warmup, game restart pending, or a round-win is already recorded).
+  // Calling native TerminateRound while the engine is in any of these transitional
+  // states has been observed to crash inside CCSGameRules::TerminateRound on Linux.
+  private static bool IsUnsafeForTermination(SwiftlyS2.Shared.SchemaDefinitions.CCSGameRules rules)
+  {
+    if (rules.WarmupPeriod) return true;
+    if (rules.FreezePeriod) return true;
+    if (rules.GameRestart) return true;
+    // RoundWinStatus != 0 means the engine has already recorded a winner for this
+    // round and a round-end sequence is in progress; another TerminateRound here
+    // would re-enter the round-end path and can crash.
+    if (rules.RoundWinStatus != 0) return true;
+    return false;
+  }
+
   public void CheckRoundDone()
   {
     var rules = _core.EntitySystem.GetGameRules();
-    if (rules is null || rules.WarmupPeriod) return;
+    if (rules is null) return;
+    if (IsUnsafeForTermination(rules)) return;
 
     // If the round is already ending (e.g. bomb defused, EventRoundEnd already fired),
     // do not call TerminateRound again — it would override the in-progress round-end
     // delay and cause the next round to start almost instantly.
-    if (!_state.RoundLive) return;
+    if (!_state.RoundLive)
+    {
+      _terminationScheduled = false;
+      return;
+    }
+
+    // Already scheduled a TerminateRound this round — bail out to prevent a
+    // second native call before EventRoundEnd has had a chance to flip RoundLive.
+    if (_terminationScheduled) return;
 
     var allPlayers = _core.PlayerManager.GetAllPlayers().Where(p => p.IsValid).ToList();
-    
+
     var tCount = allPlayers.Count(p => (Team)p.Controller.TeamNum == Team.T && p.Controller.PawnIsAlive);
     var ctCount = allPlayers.Count(p => (Team)p.Controller.TeamNum == Team.CT && p.Controller.PawnIsAlive);
 
-    if (tCount == 0 || ctCount == 0)
-    {
-      _logger.LogInformation("QueueService: CheckRoundDone - T:{T} CT:{CT}, terminating round", tCount, ctCount);
-      
-      // Determine winner based on who has players left
-      var reason = ctCount == 0 ? RoundEndReason.TerroristsWin : RoundEndReason.CTsWin;
+    if (tCount != 0 && ctCount != 0) return;
 
-      // Use the server's configured round-restart delay so the scoreboard is shown
-      // for the expected duration (mp_round_restart_delay, defaulting to 2s).
-      var restartDelay = _core.ConVar.CreateOrFind("mp_round_restart_delay", "", 2.0f)?.Value ?? 2.0f;
-      
+    _logger.LogInformation("QueueService: CheckRoundDone - T:{T} CT:{CT}, scheduling round termination", tCount, ctCount);
+
+    _terminationScheduled = true;
+
+    // Use the server's configured round-restart delay so the scoreboard is shown
+    // for the expected duration (mp_round_restart_delay, defaulting to 2s).
+    var restartDelay = _core.ConVar.CreateOrFind("mp_round_restart_delay", "", 2.0f)?.Value ?? 2.0f;
+
+    // Defer TerminateRound off the current event dispatch. Calling it synchronously
+    // from inside a game event callback (e.g. EventPlayerTeam / EventClientDisconnect)
+    // can crash the native game-rules code due to re-entrancy while the engine is
+    // still dispatching the originating event. A short delay (rather than just the
+    // next world update) also lets the engine settle out of any transitional
+    // freeze/round-start state that has been observed to crash TerminateRound when
+    // the round has only just been reset.
+    _core.Scheduler.DelayBySeconds(0.25f, () =>
+    {
+      // Re-validate state on the main thread — round may have already ended, restarted,
+      // or entered warmup between scheduling and execution.
+      var currentRules = _core.EntitySystem.GetGameRules();
+      if (currentRules is null) return;
+      if (IsUnsafeForTermination(currentRules)) return;
+      if (!_state.RoundLive) return;
+
+      var players = _core.PlayerManager.GetAllPlayers().Where(p => p.IsValid).ToList();
+      var tAlive = players.Count(p => (Team)p.Controller.TeamNum == Team.T && p.Controller.PawnIsAlive);
+      var ctAlive = players.Count(p => (Team)p.Controller.TeamNum == Team.CT && p.Controller.PawnIsAlive);
+      if (tAlive != 0 && ctAlive != 0) return;
+
+      var currentReason = ctAlive == 0 ? RoundEndReason.TerroristsWin : RoundEndReason.CTsWin;
+
       try
       {
-        rules.TerminateRound(reason, restartDelay);
+        currentRules.TerminateRound(currentReason, restartDelay);
       }
       catch (Exception ex)
       {
         _logger.LogWarning("QueueService: Failed to terminate round: {Error}", ex.Message);
-        
+
         // Fallback: kill all remaining players to force round end
-        foreach (var player in allPlayers.Where(p => p.Controller.PawnIsAlive && p.Pawn is not null))
+        foreach (var player in players.Where(p => p.Controller.PawnIsAlive && p.Pawn is not null))
         {
           player.Pawn!.CommitSuicide(false, true);
         }
       }
-    }
+    });
   }
 
   public void SetRoundTeams()
   {
+    // Always clear the termination guard at round start, regardless of the
+    // mid-round team-change setting below.
+    _terminationScheduled = false;
+
     var cfg = _config.Config.Queue;
     if (!cfg.PreventTeamChangesMidRound) return;
 
@@ -451,6 +509,7 @@ public sealed class QueueService : IQueueService
   {
     _roundTerrorists.Clear();
     _roundCounterTerrorists.Clear();
+    _terminationScheduled = false;
     _logger.LogDebug("QueueService: Round teams cleared");
   }
 
@@ -460,6 +519,7 @@ public sealed class QueueService : IQueueService
     _queuePlayers.Clear();
     _roundTerrorists.Clear();
     _roundCounterTerrorists.Clear();
+    _terminationScheduled = false;
     _logger.LogDebug("QueueService: Reset all queues");
   }
 
