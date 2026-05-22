@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SwiftlyS2.Shared;
 using SwiftlyS2.Shared.Convars;
 using SwiftlyS2.Shared.GameEventDefinitions;
+using SwiftlyS2.Shared.Misc;
 using SwiftlyS2.Shared.Natives;
 using SwiftlyS2.Shared.Players;
 using SwiftlyS2.Shared.SchemaDefinitions;
@@ -151,61 +152,88 @@ public sealed class AutoPlantService : IAutoPlantService
         // Note: SpawnManager already teleported the planter to their assigned spawn.
         // We only plant the bomb at that position; no redundant teleport needed.
 
-        var planted = _core.EntitySystem.CreateEntityByDesignerName<CPlantedC4>("planted_c4");
-        if (planted is null || !planted.IsValid)
+        // Capture locals for the world-update lambda.
+        var planterSnapshot = eventPlanter;
+        var spawnSnapshot = spawn;
+        var bombsiteSnapshot = bombsite;
+
+        _core.Scheduler.NextWorldUpdate(() =>
         {
-          _logger.LogPluginWarning("Retakes: auto-plant failed (CreateEntity planted_c4 returned null/invalid)");
-          return;
-        }
-
-        var body = planted.CBodyComponent;
-        var node = body?.SceneNode;
-        if (node is not null)
-        {
-          node.AbsOrigin.X = spawn.Position.X;
-          node.AbsOrigin.Y = spawn.Position.Y;
-          node.AbsOrigin.Z = spawn.Position.Z;
-        }
-
-        planted.HasExploded = false;
-        planted.BombSite = bombsite == Bombsite.A ? 0 : 1;
-        planted.BombTicking = true;
-        planted.CannotBeDefused = false;
-
-        planted.DispatchSpawn();
-
-        var rules = _core.EntitySystem.GetGameRules();
-        if (rules is not null)
-        {
-          rules.BombPlanted = true;
-          rules.BombDefused = false;
-          rules.BombPlantedUpdated();
-        }
-
-        var site = (short)(bombsite == Bombsite.A ? 0 : 1);
-        if (eventPlanter is not null && eventPlanter.IsValid)
-        {
-          _core.GameEvent.Fire<EventBombPlanted>(e =>
+          try
           {
-            e.Site = site;
-            e.UserId = eventPlanter.Slot;
-          });
-        }
-        else
-        {
-          _logger.LogPluginInformation("Retakes: auto-planted bomb without a planter (no alive players)");
-        }
+            // Re-check: round may have ended / restarted during the scheduler delay,
+            // and another planted_c4 may have appeared in the meantime.
+            var rulesGuard = _core.EntitySystem.GetGameRules();
+            if (rulesGuard is null || rulesGuard.WarmupPeriod)
+            {
+              _logger.LogPluginInformation("Retakes: auto-plant aborted at world-update (warmup or no rules)");
+              return;
+            }
 
-        _logger.LogPluginDebug(
-          "Retakes: auto-planted bomb. Bombsite={Bombsite} Slot={Slot} AssignedPlanter={Assigned}",
-          bombsite,
-          eventPlanter?.Slot ?? -1,
-          assignedPlanterSteamId is not null);
+            var existingGuard = _core.EntitySystem.GetAllEntitiesByDesignerName<CPlantedC4>("planted_c4");
+            if (existingGuard.Any(b => b is not null && b.IsValid))
+            {
+              _logger.LogPluginInformation("Retakes: auto-plant aborted at world-update (bomb already planted)");
+              return;
+            }
 
-        if (_autoPlantStripC4.Value)
-        {
-          _logger.LogPluginWarning("Retakes: retakes_auto_plant_strip_c4 is enabled, but stripping C4 is not supported (can crash server)");
-        }
+            var planted = _core.EntitySystem.CreateEntityByDesignerName<CPlantedC4>("planted_c4");
+            if (planted is null || !planted.IsValid)
+            {
+              _logger.LogPluginWarning("Retakes: auto-plant failed (CreateEntity planted_c4 returned null/invalid)");
+              return;
+            }
+
+            planted.HasExploded = false;
+            planted.BombSite = bombsiteSnapshot == Bombsite.A ? 0 : 1;
+            planted.BombTicking = true;
+            planted.CannotBeDefused = false;
+
+            planted.DispatchSpawn();
+
+            // Teleport AFTER DispatchSpawn so the origin actually sticks; setting
+            // SceneNode.AbsOrigin before DispatchSpawn is overwritten by spawn init,
+            // which left the bomb at (0,0,0) and made BombPlantedUpdated() deref
+            // garbage during replication.
+            planted.Teleport(
+              new Vector(spawnSnapshot.Position.X, spawnSnapshot.Position.Y, spawnSnapshot.Position.Z),
+              new QAngle(0, 0, 0),
+              Vector.Zero);
+
+            rulesGuard.BombPlanted = true;
+            rulesGuard.BombDefused = false;
+            rulesGuard.BombPlantedUpdated();
+
+            var site = (short)(bombsiteSnapshot == Bombsite.A ? 0 : 1);
+            if (planterSnapshot is not null && planterSnapshot.IsValid)
+            {
+              _core.GameEvent.Fire<EventBombPlanted>(e =>
+              {
+                e.Site = site;
+                e.UserId = planterSnapshot.Slot;
+              });
+            }
+            else
+            {
+              _logger.LogPluginInformation("Retakes: auto-planted bomb without a planter (no alive players)");
+            }
+
+            _logger.LogPluginDebug(
+              "Retakes: auto-planted bomb. Bombsite={Bombsite} Slot={Slot} AssignedPlanter={Assigned}",
+              bombsiteSnapshot,
+              planterSnapshot?.Slot ?? -1,
+              assignedPlanterSteamId is not null);
+
+            if (_autoPlantStripC4.Value)
+            {
+              _logger.LogPluginWarning("Retakes: retakes_auto_plant_strip_c4 is enabled, but stripping C4 is not supported (can crash server)");
+            }
+          }
+          catch (Exception ex)
+          {
+            _logger.LogPluginError(ex, "Retakes: auto-plant world-update exception");
+          }
+        });
       }
       catch (Exception ex)
       {

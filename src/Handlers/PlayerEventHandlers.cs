@@ -366,7 +366,7 @@ public sealed class PlayerEventHandlers
    if (attacker.Pawn is null) return HookResult.Continue;
    if (victim.Pawn is null) return HookResult.Continue;
 
-    var damage = @event.DmgHealth;
+    var damage = @event.ActualDmgHealth;
 
     _damageReport.OnPlayerHurt(attacker, victim, damage);
     return HookResult.Continue;
