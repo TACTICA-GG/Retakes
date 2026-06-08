@@ -22,6 +22,7 @@ public sealed class PlayerEventHandlers
   private readonly IDamageReportService _damageReport;
   private readonly ISoloBotService _soloBot;
   private readonly IAllocationService _allocation;
+  private readonly ISpawnManager _spawnManager;
 
   private Guid _playerSpawnPreHook;
   private Guid _playerSpawnPostHook;
@@ -32,7 +33,7 @@ public sealed class PlayerEventHandlers
   private Guid _playerHurtHook;
   private Guid _bombDefusedHook;
 
-  public PlayerEventHandlers(IPawnLifecycleService pawnLifecycle, IClutchAnnounceService clutch, IPlayerPreferencesService prefs, IRetakesStateService state, IRetakesConfigService config, IQueueService queue, IDamageReportService damageReport, ISoloBotService soloBot, IAllocationService allocation)
+  public PlayerEventHandlers(IPawnLifecycleService pawnLifecycle, IClutchAnnounceService clutch, IPlayerPreferencesService prefs, IRetakesStateService state, IRetakesConfigService config, IQueueService queue, IDamageReportService damageReport, ISoloBotService soloBot, IAllocationService allocation, ISpawnManager spawnManager)
   {
     _pawnLifecycle = pawnLifecycle;
     _clutch = clutch;
@@ -43,6 +44,7 @@ public sealed class PlayerEventHandlers
     _damageReport = damageReport;
     _soloBot = soloBot;
     _allocation = allocation;
+    _spawnManager = spawnManager;
   }
 
   public void Register(ISwiftlyCore core)
@@ -276,6 +278,18 @@ public sealed class PlayerEventHandlers
       {
         if (spawnPlayer is null || !spawnPlayer.IsValid) return;
         _pawnLifecycle.OnPlayerSpawn(spawnPlayer);
+      });
+
+      // Apply retake spawn assignment recorded in EventRoundPrestart, after the
+      // engine has finalized default spawn placement.
+      var teleportPlayer = player;
+      core.Scheduler.NextWorldUpdate(() =>
+      {
+        if (teleportPlayer is null || !teleportPlayer.IsValid) return;
+        if (!_spawnManager.TryConsumeSpawnFor(teleportPlayer.Slot, out var spawn)) return;
+        var pawn = teleportPlayer.Pawn;
+        if (pawn is null || !pawn.IsValid) return;
+        pawn.Teleport(spawn.Position, spawn.Angle, SwiftlyS2.Shared.Natives.Vector.Zero);
       });
     }
     else

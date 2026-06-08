@@ -194,32 +194,41 @@ public sealed class AllocationService : IAllocationService
     {
       pawnLifecycle.WhenPawnReady(p, _ =>
       {
-        try
+        // Defer loadout to NextWorldUpdate so it runs AFTER the spawn teleport
+        // scheduled by PlayerEventHandlers.OnPlayerSpawnPost (also NextWorldUpdate,
+        // queued earlier — FIFO guarantees teleport runs first). Otherwise items
+        // like item_defuser are created at the engine's default spawn position and
+        // get left behind when the player teleports to the retake spawn.
+        _core.Scheduler.NextWorldUpdate(() =>
         {
-          GiveLoadout(p, roundType, pistolDefuserSlot, awpReceivers, ssg08Receivers, grenadeAssignments);
-
-          // After loadout is given, schedule a delayed helmet strip for pistol rounds.
-          // The engine may re-apply helmet after our GiveItem calls, so we need to
-          // strip it on the next tick to ensure it sticks.
-          if (roundType == RoundType.Pistol && !_config.Config.Allocation.PistolHelmet)
+          if (p is null || !p.IsValid) return;
+          try
           {
-            _core.Scheduler.NextTick(() =>
+            GiveLoadout(p, roundType, pistolDefuserSlot, awpReceivers, ssg08Receivers, grenadeAssignments);
+
+            // After loadout is given, schedule a delayed helmet strip for pistol rounds.
+            // The engine may re-apply helmet after our GiveItem calls, so we need to
+            // strip it on the next tick to ensure it sticks.
+            if (roundType == RoundType.Pistol && !_config.Config.Allocation.PistolHelmet)
             {
-              if (p is null || !p.IsValid) return;
-              var pawn = p.Pawn;
-              if (pawn is null || !pawn.IsValid) return;
-              if (pawn.ItemServices is CCSPlayer_ItemServices svc && svc.HasHelmet)
+              _core.Scheduler.NextTick(() =>
               {
-                svc.HasHelmet = false;
-                svc.HasHelmetUpdated();
-              }
-            });
+                if (p is null || !p.IsValid) return;
+                var pawn = p.Pawn;
+                if (pawn is null || !pawn.IsValid) return;
+                if (pawn.ItemServices is CCSPlayer_ItemServices svc && svc.HasHelmet)
+                {
+                  svc.HasHelmet = false;
+                  svc.HasHelmetUpdated();
+                }
+              });
+            }
           }
-        }
-        catch (Exception ex)
-        {
-          _logger.LogError(ex, "Retakes: allocation failed for slot={Slot}", p.Slot);
-        }
+          catch (Exception ex)
+          {
+            _logger.LogError(ex, "Retakes: allocation failed for slot={Slot}", p.Slot);
+          }
+        });
       });
     }
   }
@@ -640,13 +649,22 @@ public sealed class AllocationService : IAllocationService
 
     if (eligible.Count == 0) return;
 
+    // Shuffle a copy of the pool so the prefix doesn't always win when MaxPerPlayer/MaxPerGrenade
+    // caps prevent the full pool from being distributed.
+    var shuffledPool = new List<string>(pool);
+    for (var i = shuffledPool.Count - 1; i > 0; i--)
+    {
+      var j = _random.Next(i + 1);
+      (shuffledPool[i], shuffledPool[j]) = (shuffledPool[j], shuffledPool[i]);
+    }
+
     // Distribute pool items round-robin across eligible players (highest priority first).
     var totalCounts = new Dictionary<ulong, int>(eligible.Count);
     // grenade type -> (steamId -> count)
     var grenadeCounts = new Dictionary<string, Dictionary<ulong, int>>(StringComparer.OrdinalIgnoreCase);
-    for (var i = 0; i < pool.Count; i++)
+    for (var i = 0; i < shuffledPool.Count; i++)
     {
-      var grenade = pool[i];
+      var grenade = shuffledPool[i];
 
       // Find the next eligible player who hasn't hit the per-player cap or the per-grenade cap.
       IPlayer? recipient = null;

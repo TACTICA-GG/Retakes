@@ -84,6 +84,7 @@
 
   "command.spawns.enabled": "[green]Retakes:[white] Menu de Spawns ativado",
   "command.spawns.disabled": "[green]Retakes:[white] Menu de Spawns desativado",
+  "command.spawns.feature_disabled": "[green]Retakes:[white] O Menu de Spawns está desativado pelo servidor",
 
   "command.awp.enabled": "[green]Retakes:[white] preferência de AWP ativada",
   "command.awp.disabled": "[green]Retakes:[white] preferência de AWP desativada",

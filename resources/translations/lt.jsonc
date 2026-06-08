@@ -84,6 +84,7 @@
 
   "command.spawns.enabled": "[green]Retakes:[white] Spawnų meniu įjungtas",
   "command.spawns.disabled": "[green]Retakes:[white] Spawnų meniu išjungtas",
+  "command.spawns.feature_disabled": "[green]Retakes:[white] Spawnų meniu yra išjungtas serverio",
 
   "command.awp.enabled": "[green]Retakes:[white] AWP preferencija įjungta",
   "command.awp.disabled": "[green]Retakes:[white] AWP preferencija išjungta",

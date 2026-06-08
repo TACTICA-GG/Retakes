@@ -6,5 +6,6 @@ namespace SwiftlyS2_Retakes.Configuration;
 public sealed class PreferencesConfig
 {
   public bool UsePerTeamPreferences { get; set; } = true;
+  public bool SpawnMenuEnabled { get; set; } = true;
   public string DatabaseConnectionName { get; set; } = "default";
 }

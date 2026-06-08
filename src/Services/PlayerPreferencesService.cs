@@ -81,11 +81,14 @@ public sealed class PlayerPreferencesService : IPlayerPreferencesService
   }
 
   public bool WantsSpawnMenu(ulong steamId) =>
-    GetBool(steamId, KeyWantsCtSpawnMenu, false);
+    _config.Config.Preferences.SpawnMenuEnabled && GetBool(steamId, KeyWantsCtSpawnMenu, false);
 
   public bool ToggleSpawnMenu(ulong steamId)
   {
-    var val = !WantsSpawnMenu(steamId);
+    if (!_config.Config.Preferences.SpawnMenuEnabled)
+      return false;
+
+    var val = !GetBool(steamId, KeyWantsCtSpawnMenu, false);
     SetBool(steamId, KeyWantsCtSpawnMenu, val);
     return val;
   }
