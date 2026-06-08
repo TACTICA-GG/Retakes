@@ -216,10 +216,11 @@ public sealed class RoundEventHandlers
     // so the engine respects them when spawning players.
     _allocation.PreSelectRoundType();
     var core = _core;
+    var isWarmup = false;
     if (core is not null)
     {
       var rules = core.EntitySystem?.GetGameRules();
-      var isWarmup = rules is not null && rules.WarmupPeriod;
+      isWarmup = rules is not null && rules.WarmupPeriod;
       if (!isWarmup)
       {
         if (_allocation.CurrentRoundType == RoundType.Pistol && !_config.Config.Allocation.PistolHelmet)
@@ -233,6 +234,19 @@ public sealed class RoundEventHandlers
           core.Engine.ExecuteCommand("mp_max_armor 2");
         }
       }
+    }
+
+    // Select bombsite and prepare per-slot spawn assignments BEFORE the engine
+    // respawns players. Spawns are then applied from the player-spawn post hook.
+    if (!isWarmup)
+    {
+      var bombsite = _state.ForcedBombsite ?? (_random.Next(0, 2) == 0 ? Bombsite.A : Bombsite.B);
+      _currentBombsite = bombsite;
+      _spawnManager.HandleRoundSpawns(bombsite);
+    }
+    else
+    {
+      _currentBombsite = null;
     }
 
     return HookResult.Continue;
@@ -549,9 +563,13 @@ public sealed class RoundEventHandlers
       _state.SetRoundParticipants(participants);
     }
 
-    var bombsite = _state.ForcedBombsite ?? (_random.Next(0, 2) == 0 ? Bombsite.A : Bombsite.B);
-    _currentBombsite = bombsite;
-    _spawnManager.HandleRoundSpawns(bombsite);
+    var bombsite = _currentBombsite ?? _state.ForcedBombsite ?? (_random.Next(0, 2) == 0 ? Bombsite.A : Bombsite.B);
+    if (_currentBombsite is null)
+    {
+      // Fallback: prestart didn't run (e.g., warmup→live edge case). Assign now.
+      _currentBombsite = bombsite;
+      _spawnManager.HandleRoundSpawns(bombsite);
+    }
     _spawnManager.OpenCtSpawnSelectionMenu(bombsite);
     _allocation.AllocateForCurrentPlayers(_pawnLifecycle);
 

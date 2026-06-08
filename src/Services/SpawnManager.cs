@@ -20,6 +20,7 @@ public sealed class SpawnManager : ISpawnManager
   private readonly Dictionary<Bombsite, Dictionary<Team, List<Spawn>>> _spawns = new();
 
   private readonly Dictionary<ulong, Spawn> _lastAssignments = new();
+  private readonly Dictionary<int, Spawn> _pendingTeleportBySlot = new();
   private ulong? _assignedPlanterSteamId;
   private Spawn? _assignedPlanterSpawn;
 
@@ -51,6 +52,10 @@ public sealed class SpawnManager : ISpawnManager
     _spawns[Bombsite.A][Team.CT].Clear();
     _spawns[Bombsite.B][Team.T].Clear();
     _spawns[Bombsite.B][Team.CT].Clear();
+    _pendingTeleportBySlot.Clear();
+    _lastAssignments.Clear();
+    _assignedPlanterSteamId = null;
+    _assignedPlanterSpawn = null;
 
     var seen = new HashSet<string>(StringComparer.Ordinal);
     var removedDuplicates = 0;
@@ -106,6 +111,7 @@ public sealed class SpawnManager : ISpawnManager
   public bool HandleRoundSpawns(Bombsite bombsite)
   {
     _lastAssignments.Clear();
+    _pendingTeleportBySlot.Clear();
     _assignedPlanterSteamId = null;
     _assignedPlanterSpawn = null;
 
@@ -195,7 +201,7 @@ public sealed class SpawnManager : ISpawnManager
         _assignedPlanterSpawn = spawn;
       }
 
-      _pawnLifecycle.WhenPawnReady(player, p => p.Teleport(spawn.Position, spawn.Angle, Vector.Zero));
+      _pendingTeleportBySlot[player.Slot] = spawn;
     }
 
     for (var i = 0; i < ctPlayers.Count; i++)
@@ -210,7 +216,7 @@ public sealed class SpawnManager : ISpawnManager
           var spawn = ctSpawnPool[0];
           ctSpawnPool.RemoveAt(0);
           _lastAssignments[player.SteamID] = spawn;
-          _pawnLifecycle.WhenPawnReady(player, pawn => pawn.Teleport(spawn.Position, spawn.Angle, Vector.Zero));
+          _pendingTeleportBySlot[player.Slot] = spawn;
         }
       }
       else
@@ -218,6 +224,7 @@ public sealed class SpawnManager : ISpawnManager
         // Spawns are selected interactively each round (menu opened at round start).
         // Do not auto-teleport here.
         _lastAssignments.Remove(player.SteamID);
+        _pendingTeleportBySlot.Remove(player.Slot);
       }
     }
 
@@ -345,7 +352,7 @@ public sealed class SpawnManager : ISpawnManager
         _assignedPlanterSpawn = spawn;
       }
 
-      _pawnLifecycle.WhenPawnReady(player, p => p.Teleport(spawn.Position, spawn.Angle, Vector.Zero));
+      _pendingTeleportBySlot[player.Slot] = spawn;
     }
   }
 
@@ -359,6 +366,19 @@ public sealed class SpawnManager : ISpawnManager
     }
 
     steamId = 0;
+    spawn = null!;
+    return false;
+  }
+
+  public bool TryConsumeSpawnFor(int slot, out Spawn spawn)
+  {
+    if (_pendingTeleportBySlot.TryGetValue(slot, out var s))
+    {
+      _pendingTeleportBySlot.Remove(slot);
+      spawn = s;
+      return true;
+    }
+
     spawn = null!;
     return false;
   }

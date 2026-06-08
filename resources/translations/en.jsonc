@@ -84,6 +84,7 @@
 
   "command.spawns.enabled": "[green]Retakes:[white] Spawn Menu enabled",
   "command.spawns.disabled": "[green]Retakes:[white] Spawn Menu disabled",
+  "command.spawns.feature_disabled": "[green]Retakes:[white] Spawn Menu is disabled by the server",
 
   "command.awp.enabled": "[green]Retakes:[white] AWP preference enabled",
   "command.awp.disabled": "[green]Retakes:[white] AWP preference disabled",

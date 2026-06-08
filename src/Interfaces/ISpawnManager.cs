@@ -35,4 +35,10 @@ public interface ISpawnManager
   /// <param name="spawn">The planter's spawn</param>
   /// <returns>True if a planter was assigned</returns>
   bool TryGetAssignedPlanter(out ulong steamId, out Spawn spawn);
+
+  /// <summary>
+  /// Consumes the pending spawn assignment for a player slot, if any.
+  /// Used by the player-spawn hook to apply retake spawns after the engine respawns players.
+  /// </summary>
+  bool TryConsumeSpawnFor(int slot, out Spawn spawn);
 }

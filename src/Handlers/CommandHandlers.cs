@@ -853,6 +853,12 @@ public sealed class CommandHandlers
       return;
     }
 
+    if (!_config.Config.Preferences.SpawnMenuEnabled)
+    {
+      context.Reply(Tr(context, "command.spawns.feature_disabled"));
+      return;
+    }
+
     var enabled = _prefs.ToggleSpawnMenu(context.Sender.SteamID);
     context.Reply(enabled ? Tr(context, "command.spawns.enabled") : Tr(context, "command.spawns.disabled"));
   }
@@ -863,16 +869,19 @@ public sealed class CommandHandlers
       .Design.SetMenuTitle("Retake")
       .EnableSound();
 
-    var spawnMenuEnabled = _prefs.WantsSpawnMenu(player.SteamID);
-    var spawnMenuText = spawnMenuEnabled ? "Spawn Menu: ON" : "Spawn Menu: OFF";
-    var spawnMenuToggle = new ButtonMenuOption(spawnMenuText);
-    spawnMenuToggle.Click += async (_, args) =>
+    if (_config.Config.Preferences.SpawnMenuEnabled)
     {
-      _prefs.ToggleSpawnMenu(args.Player.SteamID);
-      OpenRetakeMenu(core, args.Player);
-      await ValueTask.CompletedTask;
-    };
-    builder.AddOption(spawnMenuToggle);
+      var spawnMenuEnabled = _prefs.WantsSpawnMenu(player.SteamID);
+      var spawnMenuText = spawnMenuEnabled ? "Spawn Menu: ON" : "Spawn Menu: OFF";
+      var spawnMenuToggle = new ButtonMenuOption(spawnMenuText);
+      spawnMenuToggle.Click += async (_, args) =>
+      {
+        _prefs.ToggleSpawnMenu(args.Player.SteamID);
+        OpenRetakeMenu(core, args.Player);
+        await ValueTask.CompletedTask;
+      };
+      builder.AddOption(spawnMenuToggle);
+    }
 
     var awpEnabled = _prefs.WantsAwp(player.SteamID);
     var awpToggleText = awpEnabled ? "Play with AWP: ON" : "Play with AWP: OFF";
