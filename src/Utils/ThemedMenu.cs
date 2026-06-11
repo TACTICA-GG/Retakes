@@ -12,8 +12,11 @@ namespace SwiftlyS2_Retakes.Utils;
 public static class ThemedMenu
 {
   // Base URL of the SVG button icons (Pisex cs2-menus assets).
+  // jsDelivr CDN mirror (not raw.githubusercontent) — globally edge-cached with
+  // proper cache headers, so CS2's CEF browser downloads each icon once and
+  // reuses it instantly instead of hitting GitHub's rate-limited, CDN-less raw host.
   private const string MenuBtnUrl =
-    "https://raw.githubusercontent.com/Pisex/cs2-menus/refs/heads/main/menu_buttons/site";
+    "https://cdn.jsdelivr.net/gh/Pisex/cs2-menus@main/menu_buttons/site";
 
   // One <img> tag. Native SVG size (no width/height).
   private static string Img(string name) => $"<img src='{MenuBtnUrl}/{name}.svg'/>";
