@@ -9,6 +9,7 @@ using SwiftlyS2_Retakes.Configuration;
 using SwiftlyS2_Retakes.Constants;
 using SwiftlyS2_Retakes.Interfaces;
 using SwiftlyS2_Retakes.Models;
+using SwiftlyS2_Retakes.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -797,6 +798,12 @@ public sealed class CommandHandlers
     OpenGunsMenu(core, context.Sender);
   }
 
+  private IMenuBuilderAPI CreateThemedBuilder(ISwiftlyCore core, string title)
+    => ThemedMenu.CreateBuilder(core, title);
+
+  private T Themed<T>(ISwiftlyCore core, T opt) where T : MenuOptionBase
+    => ThemedMenu.Selectable(core, opt);
+
   private void OpenGunsMenu(ISwiftlyCore core, SwiftlyS2.Shared.Players.IPlayer player)
   {
     var weapons = _config.Config.Weapons;
@@ -805,23 +812,21 @@ public sealed class CommandHandlers
     var hasHalfBuy = weapons.HalfBuy.All.Count > 0 || weapons.HalfBuy.T.Count > 0 || weapons.HalfBuy.Ct.Count > 0;
     var hasFullBuy = weapons.FullBuy.All.Count > 0 || weapons.FullBuy.T.Count > 0 || weapons.FullBuy.Ct.Count > 0;
 
-    var builder = core.MenusAPI.CreateBuilder()
-      .Design.SetMenuTitle("Weapon Preferences")
-      .EnableSound();
+    var builder = CreateThemedBuilder(core, "Weapon Preferences");
 
     if (hasFullBuy)
     {
-      builder.AddOption(new SubmenuMenuOption("FullBuy", () => BuildRoundPackMenu(core, player, RoundType.FullBuy)));
+      builder.AddOption(Themed(core, new SubmenuMenuOption("FullBuy", () => BuildRoundPackMenu(core, player, RoundType.FullBuy))));
     }
 
     if (hasHalfBuy)
     {
-      builder.AddOption(new SubmenuMenuOption("HalfBuy", () => BuildRoundPackMenu(core, player, RoundType.HalfBuy)));
+      builder.AddOption(Themed(core, new SubmenuMenuOption("HalfBuy", () => BuildRoundPackMenu(core, player, RoundType.HalfBuy))));
     }
 
     if (hasPistols)
     {
-      builder.AddOption(new SubmenuMenuOption("Pistols", () => BuildPistolMenu(core, player)));
+      builder.AddOption(Themed(core, new SubmenuMenuOption("Pistols", () => BuildPistolMenu(core, player))));
     }
 
     core.MenusAPI.OpenMenuForPlayer(player, builder.Build());
@@ -865,15 +870,13 @@ public sealed class CommandHandlers
 
   private void OpenRetakeMenu(ISwiftlyCore core, SwiftlyS2.Shared.Players.IPlayer player)
   {
-    var builder = core.MenusAPI.CreateBuilder()
-      .Design.SetMenuTitle("Retake")
-      .EnableSound();
+    var builder = CreateThemedBuilder(core, "Retake");
 
     if (_config.Config.Preferences.SpawnMenuEnabled)
     {
       var spawnMenuEnabled = _prefs.WantsSpawnMenu(player.SteamID);
       var spawnMenuText = spawnMenuEnabled ? "Spawn Menu: ON" : "Spawn Menu: OFF";
-      var spawnMenuToggle = new ButtonMenuOption(spawnMenuText);
+      var spawnMenuToggle = Themed(core, new ButtonMenuOption(spawnMenuText));
       spawnMenuToggle.Click += async (_, args) =>
       {
         _prefs.ToggleSpawnMenu(args.Player.SteamID);
@@ -885,7 +888,7 @@ public sealed class CommandHandlers
 
     var awpEnabled = _prefs.WantsAwp(player.SteamID);
     var awpToggleText = awpEnabled ? "Play with AWP: ON" : "Play with AWP: OFF";
-    var awpToggle = new ButtonMenuOption(awpToggleText);
+    var awpToggle = Themed(core, new ButtonMenuOption(awpToggleText));
     awpToggle.Click += async (_, args) =>
     {
       _prefs.ToggleAwp(args.Player.SteamID);
@@ -896,7 +899,7 @@ public sealed class CommandHandlers
 
     var ssgEnabled = _prefs.WantsSsg08(player.SteamID);
     var ssgToggleText = ssgEnabled ? "Play with SSG08: ON" : "Play with SSG08: OFF";
-    var ssgToggle = new ButtonMenuOption(ssgToggleText);
+    var ssgToggle = Themed(core, new ButtonMenuOption(ssgToggleText));
     ssgToggle.Click += async (_, args) =>
     {
       _prefs.ToggleSsg08(args.Player.SteamID);
@@ -923,7 +926,7 @@ public sealed class CommandHandlers
       {
         var prioEnabled = _prefs.WantsAwpPriority(player.SteamID);
         var prioText = prioEnabled ? $"AWP priority ({pct}%): ON" : $"AWP priority ({pct}%): OFF";
-        var prioToggle = new ButtonMenuOption(prioText);
+        var prioToggle = Themed(core, new ButtonMenuOption(prioText));
         prioToggle.Click += async (_, args) =>
         {
           _prefs.ToggleAwpPriority(args.Player.SteamID);
@@ -939,12 +942,10 @@ public sealed class CommandHandlers
 
   private IMenuAPI BuildSpawnSelectionMenu(ISwiftlyCore core, SwiftlyS2.Shared.Players.IPlayer player)
   {
-    var tMenu = new SubmenuMenuOption("T spawns", () => BuildSpawnTeamMenu(core, player, isCt: false));
-    var ctMenu = new SubmenuMenuOption("CT spawns", () => BuildSpawnTeamMenu(core, player, isCt: true));
+    var tMenu = Themed(core, new SubmenuMenuOption("T spawns", () => BuildSpawnTeamMenu(core, player, isCt: false)));
+    var ctMenu = Themed(core, new SubmenuMenuOption("CT spawns", () => BuildSpawnTeamMenu(core, player, isCt: true)));
 
-    return core.MenusAPI.CreateBuilder()
-      .Design.SetMenuTitle("Spawn selection")
-      .EnableSound()
+    return CreateThemedBuilder(core, "Spawn selection")
       .AddOption(tMenu)
       .AddOption(ctMenu)
       .Build();
@@ -953,12 +954,10 @@ public sealed class CommandHandlers
   private IMenuAPI BuildSpawnTeamMenu(ISwiftlyCore core, SwiftlyS2.Shared.Players.IPlayer player, bool isCt)
   {
     var teamName = isCt ? "CT" : "T";
-    var a = new SubmenuMenuOption("Bombsite A", () => BuildSpawnListMenu(core, player, isCt, Bombsite.A));
-    var b = new SubmenuMenuOption("Bombsite B", () => BuildSpawnListMenu(core, player, isCt, Bombsite.B));
+    var a = Themed(core, new SubmenuMenuOption("Bombsite A", () => BuildSpawnListMenu(core, player, isCt, Bombsite.A)));
+    var b = Themed(core, new SubmenuMenuOption("Bombsite B", () => BuildSpawnListMenu(core, player, isCt, Bombsite.B)));
 
-    return core.MenusAPI.CreateBuilder()
-      .Design.SetMenuTitle($"{teamName} spawn selection")
-      .EnableSound()
+    return CreateThemedBuilder(core, $"{teamName} spawn selection")
       .AddOption(a)
       .AddOption(b)
       .Build();
@@ -975,14 +974,12 @@ public sealed class CommandHandlers
     var selected = _prefs.GetPreferredSpawn(player.SteamID, isCt, bombsite);
     var selectedText = selected.HasValue ? selected.Value.ToString() : "Random";
 
-    var builder = core.MenusAPI.CreateBuilder()
-      .Design.SetMenuTitle($"{team} {bombsite} (Selected: {selectedText})")
-      .EnableSound();
+    var builder = CreateThemedBuilder(core, $"{team} {bombsite} (Selected: {selectedText})");
 
     foreach (var s in spawns)
     {
       var label = string.IsNullOrWhiteSpace(s.Name) ? $"#{s.Id}" : $"#{s.Id} - {s.Name}";
-      var opt = new ButtonMenuOption(label);
+      var opt = Themed(core, new ButtonMenuOption(label));
       opt.Click += async (_, args) =>
       {
         _prefs.SetPreferredSpawn(args.Player.SteamID, isCt, bombsite, s.Id);
@@ -992,7 +989,7 @@ public sealed class CommandHandlers
       builder.AddOption(opt);
     }
 
-    var clear = new ButtonMenuOption("Clear (random)");
+    var clear = Themed(core, new ButtonMenuOption("Clear (random)"));
     clear.Click += async (_, args) =>
     {
       _prefs.SetPreferredSpawn(args.Player.SteamID, isCt, bombsite, null);
@@ -1011,13 +1008,11 @@ public sealed class CommandHandlers
     var defaultWeapon = ResolveDefaultWeapon(RoundType.Pistol, isCt, isPrimary: true);
     var selectedText = SelectedOrFallback(selected, defaultWeapon);
 
-    var builder = core.MenusAPI.CreateBuilder()
-      .Design.SetMenuTitle($"Pistols: Primary {selectedText}")
-      .EnableSound();
+    var builder = CreateThemedBuilder(core, $"Pistols: Primary {selectedText}");
 
     foreach (var w in _config.Config.Weapons.Pistols)
     {
-      var opt = new ButtonMenuOption(WeaponDisplayName(w));
+      var opt = Themed(core, new ButtonMenuOption(WeaponDisplayName(w)));
       opt.Click += async (_, args) =>
       {
         var ct = (Team)args.Player.Controller.TeamNum == Team.CT;
@@ -1029,7 +1024,7 @@ public sealed class CommandHandlers
       builder.AddOption(opt);
     }
 
-    var clear = new ButtonMenuOption(DefaultLabel(defaultWeapon));
+    var clear = Themed(core, new ButtonMenuOption(DefaultLabel(defaultWeapon)));
     clear.Click += async (_, args) =>
     {
       var ct = (Team)args.Player.Controller.TeamNum == Team.CT;
@@ -1054,12 +1049,10 @@ public sealed class CommandHandlers
     var primaryText = SelectedOrFallback(pack.Primary, defaultPrimary);
     var secondaryText = SelectedOrFallback(pack.Secondary, defaultSecondary);
 
-    var primary = new SubmenuMenuOption($"Primary: {primaryText}", () => BuildPackSlotMenu(core, player, roundType, isPrimary: true));
-    var secondary = new SubmenuMenuOption($"Secondary: {secondaryText}", () => BuildPackSlotMenu(core, player, roundType, isPrimary: false));
+    var primary = Themed(core, new SubmenuMenuOption($"Primary: {primaryText}", () => BuildPackSlotMenu(core, player, roundType, isPrimary: true)));
+    var secondary = Themed(core, new SubmenuMenuOption($"Secondary: {secondaryText}", () => BuildPackSlotMenu(core, player, roundType, isPrimary: false)));
 
-    return core.MenusAPI.CreateBuilder()
-      .Design.SetMenuTitle(PackTitle(roundType, pack.Primary, pack.Secondary, defaultPrimary, defaultSecondary))
-      .EnableSound()
+    return CreateThemedBuilder(core, PackTitle(roundType, pack.Primary, pack.Secondary, defaultPrimary, defaultSecondary))
       .AddOption(primary)
       .AddOption(secondary)
       .Build();
@@ -1072,13 +1065,11 @@ public sealed class CommandHandlers
 
     var list = GetAllowedWeaponsForMenu(roundType, isCt, isPrimary);
 
-    var builder = core.MenusAPI.CreateBuilder()
-      .Design.SetMenuTitle($"{roundType} {title}")
-      .EnableSound();
+    var builder = CreateThemedBuilder(core, $"{roundType} {title}");
 
     foreach (var w in list)
     {
-      var opt = new ButtonMenuOption(WeaponDisplayName(w));
+      var opt = Themed(core, new ButtonMenuOption(WeaponDisplayName(w)));
       opt.Click += async (_, args) =>
       {
         var ct = (Team)args.Player.Controller.TeamNum == Team.CT;
@@ -1102,7 +1093,7 @@ public sealed class CommandHandlers
     }
 
     var defaultWeapon = ResolveDefaultWeapon(roundType, isCt, isPrimary);
-    var clear = new ButtonMenuOption(DefaultLabel(defaultWeapon));
+    var clear = Themed(core, new ButtonMenuOption(DefaultLabel(defaultWeapon)));
     clear.Click += async (_, args) =>
     {
       var ct = (Team)args.Player.Controller.TeamNum == Team.CT;

@@ -299,14 +299,12 @@ public sealed class SpawnManager : ISpawnManager
 
   private IMenuAPI BuildCtSpawnMenu(Bombsite bombsite, List<Spawn> spawns)
   {
-    var builder = _core.MenusAPI.CreateBuilder()
-      .Design.SetMenuTitle("Spawn Menu")
-      .EnableSound();
+    var builder = ThemedMenu.CreateBuilder(_core, "Spawn Menu");
 
     foreach (var s in spawns)
     {
       var label = string.IsNullOrWhiteSpace(s.Name) ? $"#{s.Id}" : $"#{s.Id} - {s.Name}";
-      var opt = new ButtonMenuOption(label);
+      var opt = ThemedMenu.Selectable(_core, new ButtonMenuOption(label));
       opt.Click += async (_, args) =>
       {
         var pawn = args.Player.Pawn;
